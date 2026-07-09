@@ -440,54 +440,171 @@
 </div>
 
 <script>
-  // WhatsApp linkleri metin doldurabilir ama konumu kendiliğinden ekleyemez —
-  // bu yüzden tarayıcının GPS'inden konumu alıp, mesajın içine tıklanabilir
-  // bir Google Maps linki olarak ekliyoruz. Kullanıcı WhatsApp'ta yine de
-  // "Gönder"e basmalı; bu WhatsApp'ın kendi kuralı, sitenin değil.
+  function trackEvent(eventName, el, extraParams, callback) {
+    var doneCalled = false;
+
+    function done() {
+      if (!doneCalled && typeof callback === 'function') {
+        doneCalled = true;
+        callback();
+      }
+    }
+
+    if (typeof gtag !== 'function') {
+      done();
+      return;
+    }
+
+    var params = Object.assign({
+      link_url: el && el.href ? el.href : '',
+      link_text: el ? ((el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 100)) : '',
+      page_location: window.location.href,
+      transport_type: 'beacon',
+      event_callback: done,
+      event_timeout: 600
+    }, extraParams || {});
+
+    gtag('event', eventName, params);
+
+    if (typeof callback === 'function') {
+      setTimeout(done, 700);
+    }
+  }
+
+  // WhatsApp konum butonu
   function handleWhatsAppLocate(e, el) {
     e.preventDefault();
+
     var phone = '905443320056';
     var baseMsg = 'Merhaba, yolda kaldım, çekici talep ediyorum.';
+
     var buildUrl = function (msg) {
       return 'https://wa.me/' + phone + '?text=' + encodeURIComponent(msg);
     };
+
     var label = el.querySelector('.whatsapp-btn-label');
     var originalLabel = label ? label.textContent : null;
 
-    // Sekmeyi tıklama anında (senkron) açıyoruz ki konum asenkron geldiğinde
-    // mobil tarayıcılar bunu engellenmiş bir pop-up sanmasın.
     var popup = window.open('', '_blank');
 
-    var finish = function (msg) {
+    var finish = function (msg, locationStatus) {
       var url = buildUrl(msg);
-      if (popup && !popup.closed) { popup.location.href = url; }
-      else { window.location.href = url; }
-      if (label && originalLabel) label.textContent = originalLabel;
+
+      trackEvent('whatsapp_click', el, {
+        click_type: 'whatsapp_location_button',
+        location_status: locationStatus
+      }, function () {
+        if (popup && !popup.closed) {
+          popup.location.href = url;
+        } else {
+          window.location.href = url;
+        }
+      });
+
+      if (label && originalLabel !== null) {
+        label.textContent = originalLabel;
+      }
+
       el.classList.remove('opacity-60', 'pointer-events-none');
     };
 
     if (!navigator.geolocation) {
-      finish(baseMsg);
+      finish(baseMsg, 'not_supported');
       return;
     }
 
     el.classList.add('opacity-60', 'pointer-events-none');
-    if (label) label.textContent = 'Konum alınıyor…';
+
+    if (label) {
+      label.textContent = 'Konum alınıyor…';
+    }
 
     navigator.geolocation.getCurrentPosition(
       function (pos) {
         var mapLink = 'https://www.google.com/maps?q=' + pos.coords.latitude + ',' + pos.coords.longitude;
-        finish(baseMsg + ' Konumum: ' + mapLink);
+        finish(baseMsg + ' Konumum: ' + mapLink, 'success');
       },
       function () {
-        finish(baseMsg + ' (Konum paylaşamadım, adresimi kendim yazıyorum:)');
+        finish(baseMsg, 'failed');
       },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 0
+      }
     );
   }
 
-  var yearEl = document.getElementById('copyright-year');
-  if (yearEl) { yearEl.textContent = new Date().getFullYear(); }
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('a[href]').forEach(function (link) {
+      var href = (link.getAttribute('href') || '').toLowerCase();
+      var onclickValue = (link.getAttribute('onclick') || '').toLowerCase();
+
+      if (href.startsWith('tel:')) {
+        link.addEventListener('click', function () {
+          trackEvent('phone_click', link, {
+            click_type: 'phone_button'
+          });
+        });
+      }
+
+      if (
+        !onclickValue.includes('handlewhatsapplocate') &&
+        (href.includes('wa.me') || href.includes('whatsapp.com') || href.includes('api.whatsapp.com'))
+      ) {
+        link.addEventListener('click', function () {
+          trackEvent('whatsapp_click', link, {
+            click_type: 'normal_whatsapp_button'
+          });
+        });
+      }
+
+      if (
+        href.includes('google.com/maps') ||
+        href.includes('maps.google') ||
+        href.includes('maps.app.goo.gl')
+      ) {
+        link.addEventListener('click', function () {
+          trackEvent('map_click', link, {
+            click_type: 'map_button'
+          });
+        });
+      }
+
+      if (
+        href.includes('#galeri') ||
+        href.includes('#gallery')
+      ) {
+        link.addEventListener('click', function () {
+          trackEvent('gallery_click', link, {
+            click_type: 'gallery_link'
+          });
+        });
+      }
+
+      if (
+        href.includes('#siirt-merkez') ||
+        href.includes('#kurtalan') ||
+        href.includes('#baykan') ||
+        href.includes('#pervari') ||
+        href.includes('#sirvan') ||
+        href.includes('#eruh') ||
+        href.includes('#tillo')
+      ) {
+        link.addEventListener('click', function () {
+          trackEvent('service_area_click', link, {
+            click_type: 'service_area_link'
+          });
+        });
+      }
+    });
+
+    var yearEl = document.getElementById('copyright-year');
+
+    if (yearEl) {
+      yearEl.textContent = new Date().getFullYear();
+    }
+  });
 </script>
 </body>
 </html>
